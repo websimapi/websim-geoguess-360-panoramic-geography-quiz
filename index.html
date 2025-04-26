@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GeoGuess 360° - Panoramic Geography Quiz</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+    <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
     <style>
         body {
             margin: 0;
@@ -28,20 +30,9 @@
             transition: opacity 1s ease;
         }
         
-        #panoramic-image {
+        #panorama-viewer {
             width: 100%;
             height: 100%;
-            object-fit: cover;
-            transition: transform 0.5s ease;
-        }
-        
-        .panorama-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle at center, transparent 60%, rgba(0,0,0,0.8) 100%);
         }
         
         #guess-interface {
@@ -199,7 +190,7 @@
             z-index: 10;
         }
         
-        .drag-instructions {
+        .controls-instructions {
             position: absolute;
             top: 60px;
             left: 20px;
@@ -207,17 +198,25 @@
             color: rgba(255,255,255,0.7);
             z-index: 10;
         }
+        
+        .pnlm-controls-container {
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        
+        .pnlm-controls-container:hover {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
     <div id="game-container">
         <div id="panorama-container">
-            <img id="panoramic-image" alt="Panoramic view">
-            <div class="panorama-overlay"></div>
+            <div id="panorama-viewer"></div>
         </div>
         
         <div id="title">GeoGuess 360°</div>
-        <div class="drag-instructions">Click and drag to explore the panorama</div>
+        <div class="controls-instructions">Drag to look around • Use scroll to zoom</div>
         
         <div id="guess-interface">
             <h2>Where in the world is this?</h2>
@@ -242,7 +241,6 @@
     </div>
 
     <script>
-        // World data - a comprehensive list of countries and major cities
         const worldData = {
             "United States": ["New York", "Los Angeles", "Chicago", "San Francisco", "Miami", "Las Vegas", "Seattle", "Boston", "Houston", "Philadelphia", "Phoenix", "San Diego", "Dallas", "Denver", "Atlanta", "Portland", "New Orleans", "Nashville", "San Antonio", "Austin"],
             "United Kingdom": ["London", "Edinburgh", "Manchester", "Liverpool", "Birmingham", "Glasgow", "Cardiff", "Belfast", "Oxford", "Cambridge", "Bristol", "Leeds", "Newcastle", "York", "Bath", "Brighton", "Nottingham", "Sheffield", "Aberdeen", "Southampton"],
@@ -262,18 +260,13 @@
             // Add more countries as needed...
         };
 
-        // Game state
         let currentCountry = '';
         let currentCity = '';
         let remainingGuesses = 3;
         let score = 0;
         let isGeneratingImage = false;
-        let isDragging = false;
-        let startX, startY;
-        let panoramaX = 0, panoramaY = 0;
+        let panoramaViewer = null;
 
-        // DOM elements
-        const panoramicImage = document.getElementById('panoramic-image');
         const guessInput = document.getElementById('guess-input');
         const guessButton = document.getElementById('guess-button');
         const feedback = document.getElementById('feedback');
@@ -283,128 +276,95 @@
         const portal = document.querySelector('.portal');
         const loadingSpinner = document.getElementById('loading-spinner');
 
-        // Initialize the game
         async function initGame() {
             await selectRandomLocation();
-            setupPanoramaInteraction();
             setupGuessHandler();
         }
 
-        // Select a random location
         async function selectRandomLocation() {
             showLoadingSpinner();
             
-            // Get all countries
             const countries = Object.keys(worldData);
             
-            // Select a random country
             currentCountry = countries[Math.floor(Math.random() * countries.length)];
             
-            // Select a random city from that country
             const cities = worldData[currentCountry];
             currentCity = cities[Math.floor(Math.random() * cities.length)];
             
             console.log(`Selected: ${currentCity}, ${currentCountry}`);
             
-            // Generate and display the image
-            await generateImage();
+            await generatePanoramaImage();
             
             hideLoadingSpinner();
         }
 
-        // Generate panoramic image using AI
-        async function generateImage() {
+        async function generatePanoramaImage() {
             isGeneratingImage = true;
             feedback.textContent = 'Generating panoramic view...';
             
             try {
-                // Generate prompt for the image
-                const prompt = `A realistic 360-degree panoramic view of ${currentCity}, ${currentCountry}. Photorealistic wide panorama showing iconic landmarks, city atmosphere, and local culture. Ultra high definition HDR photography.`;
+                const prompt = `A realistic 360-degree panoramic view of ${currentCity}, ${currentCountry}. Photorealistic spherical panorama showing iconic landmarks, city atmosphere, and local culture. Ultra high definition HDR photography for 360 immersive viewing.`;
                 
-                // Generate the image
                 const result = await websim.imageGen({
                     prompt: prompt,
-                    aspect_ratio: "21:9", // Wide panoramic ratio
+                    aspect_ratio: "2:1", 
                 });
                 
-                // Display the generated image
-                panoramicImage.src = result.url;
-                panoramicImage.onload = () => {
-                    isGeneratingImage = false;
-                    feedback.textContent = '';
-                    guessInput.focus();
-                };
+                createPanoramaViewer(result.url);
+                
+                isGeneratingImage = false;
+                feedback.textContent = '';
+                guessInput.focus();
             } catch (error) {
                 console.error('Error generating image:', error);
                 feedback.textContent = 'Error generating image. Trying again...';
                 isGeneratingImage = false;
                 
-                // Retry after a short delay
                 setTimeout(() => selectRandomLocation(), 2000);
             }
         }
 
-        // Setup panorama interaction
-        function setupPanoramaInteraction() {
-            const panoramaContainer = document.getElementById('panorama-container');
+        function createPanoramaViewer(imageUrl) {
+            if (panoramaViewer) {
+                panoramaViewer.destroy();
+            }
             
-            panoramaContainer.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                panoramaContainer.style.cursor = 'grabbing';
+            panoramaViewer = pannellum.viewer('panorama-viewer', {
+                type: 'equirectangular',
+                panorama: imageUrl,
+                autoLoad: true,
+                autoRotate: -2, 
+                compass: false,
+                hfov: 100, 
+                minHfov: 50, 
+                maxHfov: 120, 
+                showFullscreenCtrl: false, 
+                showZoomCtrl: true,
+                mouseZoom: true,
+                friction: 0.5, 
+                touchPanSpeedCoeffFactor: 0.5, 
+                yaw: 0, 
+                pitch: 0, 
+                haov: 360, 
+                vaov: 180, 
+                vOffset: 0, 
+                preview: '', 
+                dynamicUpdate: true, 
+                sceneFadeDuration: 1000, 
+                backgroundColor: [0, 0, 0] 
             });
             
-            document.addEventListener('mousemove', (e) => {
-                if (!isDragging) return;
-                
-                const moveX = e.clientX - startX;
-                panoramaX += moveX;
-                
-                // Limit dragging based on image width
-                panoramaX = Math.min(Math.max(panoramaX, -panoramicImage.width), 0);
-                
-                panoramicImage.style.transform = `translateX(${panoramaX}px)`;
-                startX = e.clientX;
+            panoramaViewer.on('load', function() {
+                console.log('Panorama loaded successfully');
             });
             
-            document.addEventListener('mouseup', () => {
-                isDragging = false;
-                panoramaContainer.style.cursor = 'grab';
-            });
-            
-            document.addEventListener('mouseleave', () => {
-                isDragging = false;
-                panoramaContainer.style.cursor = 'grab';
-            });
-            
-            // Touch support for mobile
-            panoramaContainer.addEventListener('touchstart', (e) => {
-                isDragging = true;
-                startX = e.touches[0].clientX;
-                e.preventDefault();
-            });
-            
-            document.addEventListener('touchmove', (e) => {
-                if (!isDragging) return;
-                
-                const moveX = e.touches[0].clientX - startX;
-                panoramaX += moveX;
-                
-                // Limit dragging
-                panoramaX = Math.min(Math.max(panoramaX, -panoramicImage.width/2), panoramicImage.width/2);
-                
-                panoramicImage.style.transform = `translateX(${panoramaX}px)`;
-                startX = e.touches[0].clientX;
-                e.preventDefault();
-            });
-            
-            document.addEventListener('touchend', () => {
-                isDragging = false;
+            panoramaViewer.on('error', function(err) {
+                console.error('Panorama error:', err);
+                feedback.textContent = 'Error loading panorama. Trying again...';
+                setTimeout(() => selectRandomLocation(), 2000);
             });
         }
 
-        // Setup guess handler
         function setupGuessHandler() {
             guessButton.addEventListener('click', handleGuess);
             
@@ -415,7 +375,6 @@
             });
         }
 
-        // Handle user guesses
         function handleGuess() {
             if (isGeneratingImage) return;
             
@@ -426,28 +385,22 @@
                 return;
             }
             
-            // Check if the guess is correct (case insensitive)
             if (guess.toLowerCase() === currentCity.toLowerCase() || 
                 guess.toLowerCase() === currentCountry.toLowerCase()) {
-                // Correct guess
                 score++;
                 scoreValue.textContent = score;
                 feedback.innerHTML = `<span class="location-reveal">Correct! This is ${currentCity}, ${currentCountry}.</span>`;
                 
-                // Disable input during transition
                 disableInputs();
                 
-                // Show teleportation animation after a delay
                 setTimeout(() => {
                     startTeleportation();
                 }, 2500);
             } else {
-                // Incorrect guess
                 remainingGuesses--;
                 remainingGuessesEl.textContent = `Guesses remaining: ${remainingGuesses}`;
                 
                 if (remainingGuesses > 0) {
-                    // Check for partial matches to give hints
                     if (currentCountry.toLowerCase().includes(guess.toLowerCase()) || 
                         currentCity.toLowerCase().includes(guess.toLowerCase())) {
                         feedback.textContent = 'You\'re getting close! Try again.';
@@ -455,61 +408,50 @@
                         feedback.textContent = 'Incorrect guess. Try again!';
                     }
                 } else {
-                    // Out of guesses
                     feedback.innerHTML = `<span class="location-reveal">Out of guesses! This is ${currentCity}, ${currentCountry}.</span>`;
                     
-                    // Disable input during transition
                     disableInputs();
                     
-                    // Show teleportation animation after a delay
                     setTimeout(() => {
                         startTeleportation();
                     }, 3500);
                 }
             }
             
-            // Clear input field
             guessInput.value = '';
         }
 
-        // Start teleportation animation
         function startTeleportation() {
             teleportation.classList.add('teleport-active');
             
-            // Animate the portal
             setTimeout(() => {
                 portal.style.width = '3000px';
                 portal.style.height = '3000px';
             }, 500);
             
-            // Reset and prepare next location
             setTimeout(async () => {
-                // Reset game state
                 remainingGuesses = 3;
                 remainingGuessesEl.textContent = `Guesses remaining: ${remainingGuesses}`;
                 feedback.textContent = '';
-                panoramaX = 0;
-                panoramaY = 0;
-                panoramicImage.style.transform = `translateX(0)`;
                 
-                // Select new location
+                if (panoramaViewer) {
+                    panoramaViewer.destroy();
+                    panoramaViewer = null;
+                }
+                
                 await selectRandomLocation();
                 
-                // Reset portal size
                 portal.style.width = '0';
                 portal.style.height = '0';
                 
-                // Re-enable input
                 enableInputs();
                 
-                // Hide teleportation screen
                 setTimeout(() => {
                     teleportation.classList.remove('teleport-active');
                 }, 500);
             }, 4000);
         }
 
-        // Helper functions
         function disableInputs() {
             guessInput.disabled = true;
             guessButton.disabled = true;
@@ -529,10 +471,8 @@
             loadingSpinner.style.display = 'none';
         }
 
-        // Start the game when the page loads
         window.addEventListener('load', initGame);
     </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
-
