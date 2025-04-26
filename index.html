@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoGuess 360° - Panoramic Geography Quiz</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Montserrat', sans-serif;
+            background-color: #121212;
+            color: white;
+            overflow: hidden;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #panorama-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transition: opacity 1s ease;
+        }
+        
+        #panoramic-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+        
+        .panorama-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, transparent 60%, rgba(0,0,0,0.8) 100%);
+        }
+        
+        #guess-interface {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            width: 80%;
+            max-width: 500px;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        #guess-input {
+            width: 70%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+            font-size: 16px;
+            background-color: rgba(255, 255, 255, 0.9);
+        }
+        
+        #guess-button {
+            padding: 12px 20px;
+            background-color: #4361ee;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        #guess-button:hover {
+            background-color: #3a56d4;
+        }
+        
+        #feedback {
+            margin-top: 15px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+        
+        #remaining-guesses {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ff9e00;
+        }
+        
+        #score-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+        
+        #teleportation {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: black;
+            z-index: 20;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease;
+        }
+        
+        .teleport-active {
+            opacity: 1 !important;
+            pointer-events: all !important;
+        }
+        
+        .portal {
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle, #4cc9f0, #4361ee, #3a0ca3);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 2.5s cubic-bezier(0.165, 0.84, 0.44, 1);
+            box-shadow: 0 0 100px 20px rgba(76, 201, 240, 0.5);
+        }
+        
+        .loading-text {
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            position: absolute;
+            bottom: 20%;
+            width: 100%;
+            text-shadow: 0 0 10px rgba(76, 201, 240, 0.8);
+            opacity: 0;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.2; }
+            50% { opacity: 1; }
+            100% { opacity: 0.2; }
+        }
+        
+        #loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 30;
+            display: none;
+        }
+        
+        .spinner {
+            width: 80px;
+            height: 80px;
+            border: 8px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #4cc9f0;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .location-reveal {
+            color: #4cc9f0;
+            font-size: 26px;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        
+        #title {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        
+        .drag-instructions {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="panorama-container">
+            <img id="panoramic-image" alt="Panoramic view">
+            <div class="panorama-overlay"></div>
+        </div>
+        
+        <div id="title">GeoGuess 360°</div>
+        <div class="drag-instructions">Click and drag to explore the panorama</div>
+        
+        <div id="guess-interface">
+            <h2>Where in the world is this?</h2>
+            <input type="text" id="guess-input" placeholder="Enter city or country...">
+            <button id="guess-button">Guess</button>
+            <div id="feedback"></div>
+            <div id="remaining-guesses">Guesses remaining: 3</div>
+        </div>
+        
+        <div id="score-display">
+            Score: <span id="score-value">0</span>
+        </div>
+        
+        <div id="teleportation">
+            <div class="portal"></div>
+            <div class="loading-text">Teleporting to next location...</div>
+        </div>
+        
+        <div id="loading-spinner">
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <script>
+        // World data - a comprehensive list of countries and major cities
+        const worldData = {
+            "United States": ["New York", "Los Angeles", "Chicago", "San Francisco", "Miami", "Las Vegas", "Seattle", "Boston", "Houston", "Philadelphia", "Phoenix", "San Diego", "Dallas", "Denver", "Atlanta", "Portland", "New Orleans", "Nashville", "San Antonio", "Austin"],
+            "United Kingdom": ["London", "Edinburgh", "Manchester", "Liverpool", "Birmingham", "Glasgow", "Cardiff", "Belfast", "Oxford", "Cambridge", "Bristol", "Leeds", "Newcastle", "York", "Bath", "Brighton", "Nottingham", "Sheffield", "Aberdeen", "Southampton"],
+            "France": ["Paris", "Nice", "Lyon", "Marseille", "Bordeaux", "Strasbourg", "Toulouse", "Cannes", "Montpellier", "Lille", "Nantes", "Avignon", "Grenoble", "Dijon", "Annecy", "Reims", "Tours", "Aix-en-Provence", "Versailles", "Saint-Tropez"],
+            "Japan": ["Tokyo", "Kyoto", "Osaka", "Hiroshima", "Sapporo", "Nagasaki", "Yokohama", "Nara", "Fukuoka", "Kobe", "Sendai", "Nagoya", "Kanazawa", "Okinawa", "Hakone", "Kamakura", "Takayama", "Nikko", "Matsumoto", "Himeji"],
+            "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Gold Coast", "Canberra", "Hobart", "Darwin", "Cairns", "Alice Springs", "Byron Bay", "Fremantle", "Wollongong", "Newcastle", "Townsville", "Uluru", "Port Douglas", "Broome", "Launceston"],
+            "Italy": ["Rome", "Venice", "Florence", "Milan", "Naples", "Turin", "Bologna", "Verona", "Palermo", "Siena", "Pisa", "Genoa", "Catania", "Bari", "Sorrento", "Positano", "Cinque Terre", "Amalfi", "Taormina", "Matera"],
+            "Spain": ["Madrid", "Barcelona", "Valencia", "Seville", "Granada", "Malaga", "Bilbao", "Toledo", "Cordoba", "Palma", "San Sebastian", "Salamanca", "Alicante", "Cadiz", "Ibiza", "Pamplona", "Santiago de Compostela", "Zaragoza", "Marbella", "Segovia"],
+            "Germany": ["Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne", "Dresden", "Leipzig", "Nuremberg", "Stuttgart", "Dusseldorf", "Bremen", "Heidelberg", "Bonn", "Hannover", "Potsdam", "Freiburg", "Rothenburg", "Wurzburg", "Trier", "Bamberg"],
+            "Canada": ["Toronto", "Vancouver", "Montreal", "Calgary", "Ottawa", "Quebec City", "Halifax", "Victoria", "Edmonton", "Winnipeg", "Whistler", "Banff", "Niagara Falls", "Kingston", "Kelowna", "St. John's", "Saskatoon", "Regina", "Whitehorse", "Yellowknife"],
+            "Brazil": ["Rio de Janeiro", "Sao Paulo", "Brasilia", "Salvador", "Recife", "Fortaleza", "Manaus", "Belo Horizonte", "Porto Alegre", "Curitiba", "Florianopolis", "Natal", "Belém", "Ouro Preto", "Olinda", "Paraty", "Gramado", "Santos", "Vitória", "Jericoacoara"],
+            "India": ["Mumbai", "Delhi", "Kolkata", "Chennai", "Bangalore", "Hyderabad", "Jaipur", "Agra", "Varanasi", "Goa", "Udaipur", "Jodhpur", "Amritsar", "Kochi", "Mysore", "Rishikesh", "Darjeeling", "Jaisalmer", "Pushkar", "Pondicherry"],
+            "China": ["Beijing", "Shanghai", "Hong Kong", "Guangzhou", "Xian", "Chengdu", "Hangzhou", "Suzhou", "Guilin", "Nanjing", "Shenzhen", "Macau", "Tianjin", "Chongqing", "Kunming", "Xiamen", "Lhasa", "Harbin", "Qingdao", "Dalian"],
+            "Mexico": ["Mexico City", "Cancun", "Guadalajara", "Monterrey", "Oaxaca", "Merida", "Tijuana", "Puebla", "Puerto Vallarta", "Playa del Carmen", "Tulum", "San Miguel de Allende", "Acapulco", "Cozumel", "Guanajuato", "Cabo San Lucas", "Morelia", "Taxco", "Campeche", "Chihuahua"],
+            "Egypt": ["Cairo", "Alexandria", "Luxor", "Aswan", "Hurghada", "Sharm El Sheikh", "Giza", "Dahab", "El Gouna", "Marsa Alam", "Port Said", "Suez", "Siwa Oasis", "Tanta", "Zagazig", "Minya", "Mansoura", "Ismailia", "Asyut", "Sohag"],
+            "South Africa": ["Cape Town", "Johannesburg", "Durban", "Pretoria", "Port Elizabeth", "Stellenbosch", "Bloemfontein", "Kruger Park", "Kimberley", "Pietermaritzburg", "Nelspruit", "East London", "Knysna", "Hermanus", "Polokwane", "Oudtshoorn", "Paarl", "Grahamstown", "Plettenberg Bay", "Franschhoek"],
+            // Add more countries as needed...
+        };
+
+        // Game state
+        let currentCountry = '';
+        let currentCity = '';
+        let remainingGuesses = 3;
+        let score = 0;
+        let isGeneratingImage = false;
+        let isDragging = false;
+        let startX, startY;
+        let panoramaX = 0, panoramaY = 0;
+
+        // DOM elements
+        const panoramicImage = document.getElementById('panoramic-image');
+        const guessInput = document.getElementById('guess-input');
+        const guessButton = document.getElementById('guess-button');
+        const feedback = document.getElementById('feedback');
+        const remainingGuessesEl = document.getElementById('remaining-guesses');
+        const scoreValue = document.getElementById('score-value');
+        const teleportation = document.getElementById('teleportation');
+        const portal = document.querySelector('.portal');
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        // Initialize the game
+        async function initGame() {
+            await selectRandomLocation();
+            setupPanoramaInteraction();
+            setupGuessHandler();
+        }
+
+        // Select a random location
+        async function selectRandomLocation() {
+            showLoadingSpinner();
+            
+            // Get all countries
+            const countries = Object.keys(worldData);
+            
+            // Select a random country
+            currentCountry = countries[Math.floor(Math.random() * countries.length)];
+            
+            // Select a random city from that country
+            const cities = worldData[currentCountry];
+            currentCity = cities[Math.floor(Math.random() * cities.length)];
+            
+            console.log(`Selected: ${currentCity}, ${currentCountry}`);
+            
+            // Generate and display the image
+            await generateImage();
+            
+            hideLoadingSpinner();
+        }
+
+        // Generate panoramic image using AI
+        async function generateImage() {
+            isGeneratingImage = true;
+            feedback.textContent = 'Generating panoramic view...';
+            
+            try {
+                // Generate prompt for the image
+                const prompt = `A realistic 360-degree panoramic view of ${currentCity}, ${currentCountry}. Photorealistic wide panorama showing iconic landmarks, city atmosphere, and local culture. Ultra high definition HDR photography.`;
+                
+                // Generate the image
+                const result = await websim.imageGen({
+                    prompt: prompt,
+                    aspect_ratio: "21:9", // Wide panoramic ratio
+                });
+                
+                // Display the generated image
+                panoramicImage.src = result.url;
+                panoramicImage.onload = () => {
+                    isGeneratingImage = false;
+                    feedback.textContent = '';
+                    guessInput.focus();
+                };
+            } catch (error) {
+                console.error('Error generating image:', error);
+                feedback.textContent = 'Error generating image. Trying again...';
+                isGeneratingImage = false;
+                
+                // Retry after a short delay
+                setTimeout(() => selectRandomLocation(), 2000);
+            }
+        }
+
+        // Setup panorama interaction
+        function setupPanoramaInteraction() {
+            const panoramaContainer = document.getElementById('panorama-container');
+            
+            panoramaContainer.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                panoramaContainer.style.cursor = 'grabbing';
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                
+                const moveX = e.clientX - startX;
+                panoramaX += moveX;
+                
+                // Limit dragging based on image width
+                panoramaX = Math.min(Math.max(panoramaX, -panoramicImage.width), 0);
+                
+                panoramicImage.style.transform = `translateX(${panoramaX}px)`;
+                startX = e.clientX;
+            });
+            
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                panoramaContainer.style.cursor = 'grab';
+            });
+            
+            document.addEventListener('mouseleave', () => {
+                isDragging = false;
+                panoramaContainer.style.cursor = 'grab';
+            });
+            
+            // Touch support for mobile
+            panoramaContainer.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                startX = e.touches[0].clientX;
+                e.preventDefault();
+            });
+            
+            document.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                
+                const moveX = e.touches[0].clientX - startX;
+                panoramaX += moveX;
+                
+                // Limit dragging
+                panoramaX = Math.min(Math.max(panoramaX, -panoramicImage.width/2), panoramicImage.width/2);
+                
+                panoramicImage.style.transform = `translateX(${panoramaX}px)`;
+                startX = e.touches[0].clientX;
+                e.preventDefault();
+            });
+            
+            document.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+        }
+
+        // Setup guess handler
+        function setupGuessHandler() {
+            guessButton.addEventListener('click', handleGuess);
+            
+            guessInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleGuess();
+                }
+            });
+        }
+
+        // Handle user guesses
+        function handleGuess() {
+            if (isGeneratingImage) return;
+            
+            const guess = guessInput.value.trim();
+            
+            if (!guess) {
+                feedback.textContent = 'Please enter a guess!';
+                return;
+            }
+            
+            // Check if the guess is correct (case insensitive)
+            if (guess.toLowerCase() === currentCity.toLowerCase() || 
+                guess.toLowerCase() === currentCountry.toLowerCase()) {
+                // Correct guess
+                score++;
+                scoreValue.textContent = score;
+                feedback.innerHTML = `<span class="location-reveal">Correct! This is ${currentCity}, ${currentCountry}.</span>`;
+                
+                // Disable input during transition
+                disableInputs();
+                
+                // Show teleportation animation after a delay
+                setTimeout(() => {
+                    startTeleportation();
+                }, 2500);
+            } else {
+                // Incorrect guess
+                remainingGuesses--;
+                remainingGuessesEl.textContent = `Guesses remaining: ${remainingGuesses}`;
+                
+                if (remainingGuesses > 0) {
+                    // Check for partial matches to give hints
+                    if (currentCountry.toLowerCase().includes(guess.toLowerCase()) || 
+                        currentCity.toLowerCase().includes(guess.toLowerCase())) {
+                        feedback.textContent = 'You\'re getting close! Try again.';
+                    } else {
+                        feedback.textContent = 'Incorrect guess. Try again!';
+                    }
+                } else {
+                    // Out of guesses
+                    feedback.innerHTML = `<span class="location-reveal">Out of guesses! This is ${currentCity}, ${currentCountry}.</span>`;
+                    
+                    // Disable input during transition
+                    disableInputs();
+                    
+                    // Show teleportation animation after a delay
+                    setTimeout(() => {
+                        startTeleportation();
+                    }, 3500);
+                }
+            }
+            
+            // Clear input field
+            guessInput.value = '';
+        }
+
+        // Start teleportation animation
+        function startTeleportation() {
+            teleportation.classList.add('teleport-active');
+            
+            // Animate the portal
+            setTimeout(() => {
+                portal.style.width = '3000px';
+                portal.style.height = '3000px';
+            }, 500);
+            
+            // Reset and prepare next location
+            setTimeout(async () => {
+                // Reset game state
+                remainingGuesses = 3;
+                remainingGuessesEl.textContent = `Guesses remaining: ${remainingGuesses}`;
+                feedback.textContent = '';
+                panoramaX = 0;
+                panoramaY = 0;
+                panoramicImage.style.transform = `translateX(0)`;
+                
+                // Select new location
+                await selectRandomLocation();
+                
+                // Reset portal size
+                portal.style.width = '0';
+                portal.style.height = '0';
+                
+                // Re-enable input
+                enableInputs();
+                
+                // Hide teleportation screen
+                setTimeout(() => {
+                    teleportation.classList.remove('teleport-active');
+                }, 500);
+            }, 4000);
+        }
+
+        // Helper functions
+        function disableInputs() {
+            guessInput.disabled = true;
+            guessButton.disabled = true;
+        }
+
+        function enableInputs() {
+            guessInput.disabled = false;
+            guessButton.disabled = false;
+            guessInput.focus();
+        }
+
+        function showLoadingSpinner() {
+            loadingSpinner.style.display = 'block';
+        }
+
+        function hideLoadingSpinner() {
+            loadingSpinner.style.display = 'none';
+        }
+
+        // Start the game when the page loads
+        window.addEventListener('load', initGame);
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+
